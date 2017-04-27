@@ -90,6 +90,7 @@ public:
     void process();
 public slots:
     void processBuffer();
+    void deviceInvalidated() { stop(); }
 private:
     bool initStart(bool pull);
     friend class WasapiInputDevicePrivate;
