@@ -289,11 +289,12 @@ bool QWasapiAudioInput::initStart(bool pull)
     Q_ASSERT(m_interface);
 
     m_pullMode = pull;
-    WAVEFORMATEX nFmt;
+    WAVEFORMATEXTENSIBLE nFmtEx;
+    WAVEFORMATEX &nFmt = nFmtEx.Format;
     WAVEFORMATEX closest;
     WAVEFORMATEX *pClose = &closest;
 
-    if (!m_currentFormat.isValid() || !QWasapiUtils::convertToNativeFormat(m_currentFormat, &nFmt)) {
+    if (!m_currentFormat.isValid() || !QWasapiUtils::convertToNativeFormat(m_currentFormat, &nFmtEx)) {
         m_currentError = QAudio::OpenError;
         emit errorChanged(m_currentError);
         return false;

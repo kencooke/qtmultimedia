@@ -134,7 +134,7 @@ private:
 
 namespace QWasapiUtils
 {
-    bool convertToNativeFormat(const QAudioFormat &qt, WAVEFORMATEX *native);
+    bool convertToNativeFormat(const QAudioFormat &qt, WAVEFORMATEXTENSIBLE *native);
     bool convertFromNativeFormat(const WAVEFORMATEX *native, QAudioFormat *qt);
 
     QList<QByteArray> availableDevices(QAudio::Mode mode);

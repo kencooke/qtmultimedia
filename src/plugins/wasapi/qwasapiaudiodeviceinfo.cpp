@@ -95,8 +95,9 @@ bool QWasapiAudioDeviceInfo::isFormatSupported(const QAudioFormat& format) const
 {
     qCDebug(lcMmDeviceInfo) << __FUNCTION__ << format;
 
-    WAVEFORMATEX nfmt;
-    if (!QWasapiUtils::convertToNativeFormat(format, &nfmt))
+    WAVEFORMATEXTENSIBLE nfmtEx;
+    WAVEFORMATEX &nfmt = nfmtEx.Format;
+    if (!QWasapiUtils::convertToNativeFormat(format, &nfmtEx))
         return false;
 
     WAVEFORMATEX closest;
