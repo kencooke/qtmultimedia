@@ -42,48 +42,91 @@
 
 #include <Audioclient.h>
 
+#include <map>
+
 QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(lcMmDeviceInfo, "qt.multimedia.deviceinfo")
+
+using namespace Microsoft::WRL;
+
+struct AudioDeviceInfo {
+    ComPtr<AudioInterface> _interface;
+    QList<int> _sampleRates;
+    QList<int> _channelCounts;
+    QList<int> _sampleSizes;
+    QList<QAudioFormat::SampleType> _sampleTypes;
+};
+
+// AudioDeviceInfo cache
+typedef std::map<QPair<QByteArray, QAudio::Mode>, AudioDeviceInfo> audioDeviceInfoMap;
+Q_GLOBAL_STATIC(audioDeviceInfoMap, gAudioDeviceInfoCache);
 
 QWasapiAudioDeviceInfo::QWasapiAudioDeviceInfo(QByteArray dev, QAudio::Mode mode)
     : m_deviceName(dev)
 {
     qCDebug(lcMmDeviceInfo) << __FUNCTION__ << dev << mode;
-    m_interface = QWasapiUtils::createOrGetInterface(dev, mode);
 
-    QAudioFormat referenceFormat = m_interface->m_mixFormat;
+    auto key = qMakePair(dev, mode);
+    if (gAudioDeviceInfoCache->count(key) == 0) {
 
-    const int rates[] = {8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 192000};
-    for (int rate : rates) {
-        QAudioFormat f = referenceFormat;
-        f.setSampleRate(rate);
-        if (isFormatSupported(f))
-            m_sampleRates.append(rate);
+        m_interface = QWasapiUtils::createOrGetInterface(dev, mode);
+
+        QAudioFormat referenceFormat = m_interface->m_mixFormat;
+
+        const int rates[] = {8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 192000};
+        for (int rate : rates) {
+            QAudioFormat f = referenceFormat;
+            f.setSampleRate(rate);
+            if (isFormatSupported(f))
+                m_sampleRates.append(rate);
+        }
+
+        for (int i = 1; i <= 18; ++i) {
+            QAudioFormat f = referenceFormat;
+            f.setChannelCount(i);
+            if (isFormatSupported(f))
+                m_channelCounts.append(i);
+        }
+
+        const int sizes[] = {8, 12, 16, 20, 24, 32, 64};
+        for (int s : sizes) {
+            QAudioFormat f = referenceFormat;
+            f.setSampleSize(s);
+            if (isFormatSupported(f))
+                m_sampleSizes.append(s);
+        }
+
+        referenceFormat.setSampleType(QAudioFormat::SignedInt);
+        if (isFormatSupported(referenceFormat))
+            m_sampleTypes.append(QAudioFormat::SignedInt);
+
+        referenceFormat.setSampleType(QAudioFormat::Float);
+        if (isFormatSupported(referenceFormat))
+            m_sampleTypes.append(QAudioFormat::Float);
+
+        // Insert into AudioDeviceInfo cache
+        AudioDeviceInfo info;
+
+        info._interface = m_interface;
+        info._sampleRates = m_sampleRates;
+        info._channelCounts = m_channelCounts;
+        info._sampleSizes = m_sampleSizes;
+        info._sampleTypes = m_sampleTypes;
+
+        gAudioDeviceInfoCache->insert(std::make_pair(key, info));
+
+    } else {
+
+        // Retrieve from AudioDeviceInfo cache
+        AudioDeviceInfo info = gAudioDeviceInfoCache->at(key);
+
+        m_interface = info._interface;
+        m_sampleRates = info._sampleRates;
+        m_channelCounts = info._channelCounts;
+        m_sampleSizes = info._sampleSizes;
+        m_sampleTypes = info._sampleTypes;
     }
-
-    for (int i = 1; i <= 18; ++i) {
-        QAudioFormat f = referenceFormat;
-        f.setChannelCount(i);
-        if (isFormatSupported(f))
-            m_channelCounts.append(i);
-    }
-
-    const int sizes[] = {8, 12, 16, 20, 24, 32, 64};
-    for (int s : sizes) {
-        QAudioFormat f = referenceFormat;
-        f.setSampleSize(s);
-        if (isFormatSupported(f))
-            m_sampleSizes.append(s);
-    }
-
-    referenceFormat.setSampleType(QAudioFormat::SignedInt);
-    if (isFormatSupported(referenceFormat))
-        m_sampleTypes.append(QAudioFormat::SignedInt);
-
-    referenceFormat.setSampleType(QAudioFormat::Float);
-    if (isFormatSupported(referenceFormat))
-        m_sampleTypes.append(QAudioFormat::Float);
 }
 
 QWasapiAudioDeviceInfo::~QWasapiAudioDeviceInfo()
