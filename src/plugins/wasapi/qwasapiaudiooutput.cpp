@@ -307,7 +307,7 @@ bool QWasapiAudioOutput::initStart(bool pull)
 
     REFERENCE_TIME t = ((10000.0 * 10000 / nFmt.nSamplesPerSec * 1024) + 0.5);
     if (m_bufferBytes)
-        t = m_currentFormat.durationForBytes(m_bufferBytes) * 100;
+        t = m_currentFormat.durationForBytes(m_bufferBytes) * 10;
 
     DWORD flags = pull ? AUDCLNT_STREAMFLAGS_EVENTCALLBACK : 0;
     hr = m_interface->m_client->Initialize(AUDCLNT_SHAREMODE_SHARED, flags, t, 0, &nFmt, NULL);
