@@ -89,7 +89,6 @@ public:
 
     void process();
 public slots:
-    void processBuffer();
     void deviceInvalidated() { stop(); }
 private:
     bool initStart(bool pull);
@@ -115,7 +114,6 @@ private:
     quint32 m_bufferBytes;
     HANDLE m_event;
     QWasapiProcessThread *m_eventThread;
-    QAtomicInt m_processing;
     QIODevice *m_eventDevice;
 };
 

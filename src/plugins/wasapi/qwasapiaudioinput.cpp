@@ -120,7 +120,7 @@ qint64 WasapiInputDevicePrivate::readData(char* data, qint64 len)
         qFatal("Could not release buffer");
 
     if (m_input->m_interval && m_input->m_openTime.elapsed() - m_input->m_openTimeOffset > m_input->m_interval) {
-        emit m_input->notify();
+        QMetaObject::invokeMethod(m_input, "notify", Qt::QueuedConnection);
         m_input->m_openTimeOffset = m_input->m_openTime.elapsed();
     }
 
@@ -128,7 +128,8 @@ qint64 WasapiInputDevicePrivate::readData(char* data, qint64 len)
 
     if (m_input->m_currentState != QAudio::ActiveState) {
         m_input->m_currentState = QAudio::ActiveState;
-        emit m_input->stateChanged(m_input->m_currentState);
+        QMetaObject::invokeMethod(m_input, "stateChanged", Qt::QueuedConnection,
+                                  Q_ARG(QAudio::State, QAudio::ActiveState));
     }
     return readBytes;
 }
@@ -191,9 +192,13 @@ qreal QWasapiAudioInput::volume() const
 void QWasapiAudioInput::process()
 {
     qCDebug(lcMmAudioInput) << __FUNCTION__;
+    const quint32 channelCount = m_currentFormat.channelCount();
+    const quint32 sampleBytes = m_currentFormat.sampleSize() / 8;
+    BYTE* buffer;
+    HRESULT hr;
     DWORD waitRet;
 
-    m_processing = true;
+    bool processing = true;
     do {
         waitRet = WaitForSingleObjectEx(m_event, 2000, FALSE);
         if (waitRet != WAIT_OBJECT_0) {
@@ -207,75 +212,67 @@ void QWasapiAudioInput::process()
 
         if (m_currentState != QAudio::ActiveState && m_currentState != QAudio::IdleState)
             break;
-        QMetaObject::invokeMethod(this, "processBuffer", Qt::QueuedConnection);
-    } while (m_processing);
-}
 
-void QWasapiAudioInput::processBuffer()
-{
-    if (!m_pullMode) {
-        emit m_eventDevice->readyRead();
-        ResetEvent(m_event);
-        return;
-    }
-
-    QMutexLocker locker(&m_mutex);
-    const quint32 channelCount = m_currentFormat.channelCount();
-    const quint32 sampleBytes = m_currentFormat.sampleSize() / 8;
-    BYTE* buffer;
-    HRESULT hr;
-
-    quint32 packetFrames;
-    hr = m_capture->GetNextPacketSize(&packetFrames);
-
-    while (packetFrames != 0 && m_currentState == QAudio::ActiveState) {
-        DWORD flags;
-        quint64 devicePosition;
-        hr = m_capture->GetBuffer(&buffer, &packetFrames, &flags, &devicePosition, NULL);
-        if (hr != S_OK) {
-            m_currentError = QAudio::FatalError;
-            emit errorChanged(m_currentError);
-            // Also Error Buffers need to be released
-            hr = m_capture->ReleaseBuffer(packetFrames);
-            qCDebug(lcMmAudioInput) << __FUNCTION__ << "Could not acquire input buffer.";
-            return;
-        }
-        const quint32 writeBytes = packetFrames * channelCount * sampleBytes;
-        if (Q_UNLIKELY(flags & AUDCLNT_BUFFERFLAGS_SILENT)) {
-            // In case this flag is set, user is supposed to ignore the content
-            // of the buffer and manually write silence
-            qCDebug(lcMmAudioInput) << __FUNCTION__ << "AUDCLNT_BUFFERFLAGS_SILENT: "
-                                    << "Ignoring buffer and writing silence.";
-            buffer = new BYTE[writeBytes];
-            memset(buffer, 0, writeBytes);
+        if (!m_pullMode) {
+            QMetaObject::invokeMethod(m_eventDevice, "readyRead", Qt::QueuedConnection);
+            ResetEvent(m_event);
+            continue;
         }
 
-        const qint64 written = m_eventDevice->write(reinterpret_cast<const char *>(buffer), writeBytes);
-
-        if (Q_UNLIKELY(flags & AUDCLNT_BUFFERFLAGS_SILENT))
-            delete [] buffer;
-
-        if (written < static_cast<qint64>(writeBytes)) {
-            if (m_currentError != QAudio::UnderrunError) {
-                m_currentError = QAudio::UnderrunError;
-                emit errorChanged(m_currentError);
-            }
-        }
-        hr = m_capture->ReleaseBuffer(packetFrames);
-        if (hr != S_OK)
-            qFatal("Could not release buffer");
-
-        m_bytesProcessed += writeBytes;
-
+        quint32 packetFrames;
         hr = m_capture->GetNextPacketSize(&packetFrames);
-    }
-    ResetEvent(m_event);
 
-    if (m_interval && m_openTime.elapsed() - m_openTimeOffset > m_interval) {
-        emit notify();
-        m_openTimeOffset = m_openTime.elapsed();
-    }
-    m_processing = m_currentState == QAudio::ActiveState || m_currentState == QAudio::IdleState;
+        while (packetFrames != 0 && m_currentState == QAudio::ActiveState) {
+            DWORD flags;
+            quint64 devicePosition;
+            hr = m_capture->GetBuffer(&buffer, &packetFrames, &flags, &devicePosition, NULL);
+            if (hr != S_OK) {
+                m_currentError = QAudio::FatalError;
+                QMetaObject::invokeMethod(this, "errorChanged", Qt::QueuedConnection,
+                                          Q_ARG(QAudio::Error, QAudio::UnderrunError));
+                // Also Error Buffers need to be released
+                hr = m_capture->ReleaseBuffer(packetFrames);
+                qCDebug(lcMmAudioInput) << __FUNCTION__ << "Could not acquire input buffer.";
+                return;
+            }
+            const quint32 writeBytes = packetFrames * channelCount * sampleBytes;
+            if (Q_UNLIKELY(flags & AUDCLNT_BUFFERFLAGS_SILENT)) {
+                // In case this flag is set, user is supposed to ignore the content
+                // of the buffer and manually write silence
+                qCDebug(lcMmAudioInput) << __FUNCTION__ << "AUDCLNT_BUFFERFLAGS_SILENT: "
+                                        << "Ignoring buffer and writing silence.";
+                buffer = new BYTE[writeBytes];
+                memset(buffer, 0, writeBytes);
+            }
+
+            qint64 written = m_eventDevice->write(reinterpret_cast<const char *>(buffer), writeBytes);
+
+            if (Q_UNLIKELY(flags & AUDCLNT_BUFFERFLAGS_SILENT))
+                delete [] buffer;
+
+            if (written < static_cast<qint64>(writeBytes)) {
+                if (m_currentError != QAudio::UnderrunError) {
+                    m_currentError = QAudio::UnderrunError;
+                    QMetaObject::invokeMethod(this, "errorChanged", Qt::QueuedConnection,
+                                              Q_ARG(QAudio::Error, QAudio::UnderrunError));
+                }
+            }
+            hr = m_capture->ReleaseBuffer(packetFrames);
+            if (hr != S_OK)
+                qFatal("Could not release buffer");
+
+            m_bytesProcessed += writeBytes;
+
+            hr = m_capture->GetNextPacketSize(&packetFrames);
+        }
+        ResetEvent(m_event);
+
+        if (m_interval && m_openTime.elapsed() - m_openTimeOffset > m_interval) {
+            QMetaObject::invokeMethod(this, "notify", Qt::QueuedConnection);
+            m_openTimeOffset = m_openTime.elapsed();
+        }
+        processing = m_currentState == QAudio::ActiveState || m_currentState == QAudio::IdleState;
+    } while (processing);
 }
 
 bool QWasapiAudioInput::initStart(bool pull)
