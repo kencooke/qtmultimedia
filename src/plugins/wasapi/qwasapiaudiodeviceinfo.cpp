@@ -63,7 +63,7 @@ typedef std::map<QPair<QByteArray, QAudio::Mode>, AudioDeviceInfo> audioDeviceIn
 Q_GLOBAL_STATIC(audioDeviceInfoMap, gAudioDeviceInfoCache);
 
 QWasapiAudioDeviceInfo::QWasapiAudioDeviceInfo(QByteArray dev, QAudio::Mode mode)
-    : m_deviceName(dev)
+    : m_deviceName(QString::fromLocal8Bit(dev))
 {
     qCDebug(lcMmDeviceInfo) << __FUNCTION__ << dev << mode;
 
