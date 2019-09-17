@@ -204,7 +204,8 @@ void QWasapiAudioOutput::process()
     do {
         waitRet = WaitForSingleObjectEx(m_event, 2000, FALSE);
         if (waitRet != WAIT_OBJECT_0) {
-            qFatal("Returned while waiting for event.");
+            qWarning("Returned while waiting for event.");
+            QMetaObject::invokeMethod(this, "handleDeviceTimeout", Qt::QueuedConnection);
             return;
         }
 

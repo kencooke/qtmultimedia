@@ -91,6 +91,7 @@ public:
     void process();
 public slots:
     void processBuffer();
+    void handleDeviceTimeout() { stop(); }
 private:
     bool initStart(bool pull);
     friend class WasapiOutputDevicePrivate;
